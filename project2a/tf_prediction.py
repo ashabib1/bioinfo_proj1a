@@ -1,1 +1,95 @@
+import numpy as np
+import torch
+from torch import nn, Tensor
+from sklearn.model_selection import train_test_split
+from keras.models import Sequential
+from keras.layers import Dense, Conv1D, GlobalMaxPooling1D
+import tensorflow as tf
 
+def fit_eval(X_train, y_train, X_val, y_val, X_test):
+
+    model = Sequential()
+    model.add(Conv1D(64, kernel_size=100, activation='relu', input_shape=(X_train.shape[1], 1)))
+    model.add(GlobalMaxPooling1D())
+    model.add(Dense(64, activation='relu'))
+    model.add(Dense(1, activation='sigmoid'))
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    model.fit(X_train, y_train, epochs=10, verbose=1)
+    validate(np.round(model.predict(X_val)), y_val)
+    return model.predict(X_test)
+
+def validate(y_pred, y_true):
+
+    y_pred = torch.tensor(y_pred)
+    y_true.clone().detach()
+    n_correct = torch.eq(y_pred.argmax(axis=1), y_true).sum().item()
+    accuracy = (n_correct / len(y_pred)) * 100
+    print(accuracy)
+    return accuracy
+
+def parse_file(reads_fn):
+
+    try:
+        with open(reads_fn, 'r') as rFile:
+            print("Parsing Reads...")
+            all_reads = []
+            ends = ''
+            for line in rFile:
+                if line.strip().split(',')[0][0] == '>':
+                    all_reads.append(ends)
+                    ends = ''
+                    continue
+                ends = ends + line.strip().split(',')[0]
+        return all_reads[1:]
+    except IOError:
+        print("Could not read file: ", reads_fn)
+        return None
+
+def encoding(X):
+    dictionary = {'A':0,'C':1,'G':2,'T':3}
+    new_list = []
+    for genes in X:
+        integer_encoded = np.array([dictionary[char] for char in genes])
+        new_list.append(integer_encoded)
+    return Tensor(np.array(new_list))
+
+def open_file(name, outputs):
+
+    with open(name, 'w') as f:
+        for output in outputs:
+            f.write(output)
+            if output != outputs[-1]:
+                f.write('\n')
+        f.close()
+
+if __name__ == "__main__":
+
+    bound = parse_file('project2a/bound.fasta')
+    not_bound = parse_file('project2a/notbound.fasta')
+    X_test = parse_file('project2a/test.fasta')
+    X = encoding(bound + not_bound)
+    X_test = encoding(X_test)
+    y = Tensor([1] * len(bound) + [0] * len(not_bound))
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=0)
+    y_train = y_train.type(torch.LongTensor)
+    X_train = tf.convert_to_tensor(X_train, dtype=None)
+    y_train = tf.convert_to_tensor(y_train, dtype=None)
+    X_val = tf.convert_to_tensor(X_val, dtype=None)
+    X_test = tf.convert_to_tensor(X_test, dtype=None)
+
+    m2 = fit_eval(X_train, y_train, X_val, y_val, X_test)
+
+
+    r = []
+    v = []
+    for val in m2:
+        r.append(val)
+    for k in range(2000):
+        r2 = r.index(max(r))
+        v.append(r2)
+        r[r2] = -1
+    v.sort()
+    x2 = []
+    for g in v:
+        x2.append('seq' + str(g + 1))
+    open_file('project2a/preds.txt', x2)
